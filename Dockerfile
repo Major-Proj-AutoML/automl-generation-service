@@ -1,0 +1,23 @@
+FROM python:3.11-slim
+
+WORKDIR /srv
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential libpq-dev && \
+    rm -rf /var/lib/apt/lists/*
+
+COPY pyproject.toml ./
+COPY app ./app
+
+RUN pip install --no-cache-dir --upgrade pip setuptools && \
+    pip install --no-cache-dir --no-deps -e . && \
+    pip install --no-cache-dir \
+        fastapi "uvicorn[standard]" sqlalchemy psycopg2-binary pydantic-settings httpx \
+        redis rq \
+        pandas numpy scikit-learn scipy pydantic requests openml tabulate
+
+ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1
+
+EXPOSE 8003
+
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8003"]
