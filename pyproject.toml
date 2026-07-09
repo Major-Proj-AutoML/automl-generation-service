@@ -8,7 +8,7 @@ version = "0.1.0"
 description = "Async LLM generation microservice. Enqueues Ollama+subprocess runs via Redis/RQ, retries on failure with error feedback, writes RunResults to Postgres."
 requires-python = ">=3.11"
 dependencies = [
-    "automl-reusables @ git+https://github.com/Major-Proj-AutoML/automl-reusables.git@main",
+    "automl-reusables @ git+https://github.com/Major-Proj-AutoML/automl-reusables.git@v0.1.0",
     "fastapi>=0.115",
     "uvicorn[standard]>=0.30",
     "sqlalchemy>=2.0",
