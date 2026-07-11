@@ -13,8 +13,10 @@ from pathlib import Path
 import pandas as pd
 
 from src.conditions import B0Naive, B1Schema, B2MetaFeatureGuided
-from src.contracts import GeneratedPipeline, TaskType
+from src.contracts import ErrorCategory, GeneratedPipeline, MetaFeatures, RunResult, TaskType
+from src.execution.metrics import extract_reasoning
 from src.execution.runner import execute_pipeline
+from src.execution.verification import verify_reasoning
 from src.experiments.datasets import build_task_description
 from src.experiments.runner import build_error_feedback, call_llm
 from src.meta_features.extractor import extract as extract_meta
@@ -111,6 +113,12 @@ def run_cell(
             result = execute_pipeline(
                 pipeline, task_type=task_type, timeout_seconds=timeout_seconds
             )
+
+            # B2 must additionally emit a REASONING trace that we can
+            # mechanically verify against the code and meta-features.
+            # Skip for B0/B1 (they are not prompted to produce a trace).
+            if result.success and condition_key == "b2_metafeature":
+                result = _verify_b2_reasoning(result, code, meta)
 
             if result.success:
                 best_result = result
@@ -235,3 +243,60 @@ def _expand_cells(params: dict) -> list[tuple[int, str, str, int]]:
                 for seed in params["seeds"]:
                     out.append((int(ds_id), str(cond), str(model), int(seed)))
     return out
+
+
+def _verify_b2_reasoning(
+    result: RunResult, code: str, meta: MetaFeatures | None
+) -> RunResult:
+    """For a successful B2 run, extract the LLM's REASONING trace, verify it
+    mechanically against the generated code and meta-features, save trace and
+    verification report as sidecar files next to the generated code, and flip
+    the result to failed if the trace is missing or unfaithful.
+
+    Never raises — any error becomes a REASONING_UNFAITHFUL failure with a
+    descriptive message.
+    """
+    code_path = Path(result.generated_code_path)
+    stdout_path = Path(str(code_path) + ".stdout.txt")
+    trace_path = Path(str(code_path).replace(".py", "") + ".trace.json")
+    verification_path = Path(str(code_path).replace(".py", "") + ".verification.json")
+
+    try:
+        stdout = stdout_path.read_text(encoding="utf-8") if stdout_path.exists() else ""
+    except OSError as exc:
+        return _mark_unfaithful(result, f"Could not read stdout sidecar: {exc}")
+
+    trace = extract_reasoning(stdout)
+    if trace is None:
+        return _mark_unfaithful(
+            result,
+            "No REASONING: {...} line found in stdout, or the JSON was malformed.",
+        )
+
+    try:
+        report = verify_reasoning(trace, code, meta)
+    except Exception as exc:  # noqa: BLE001
+        return _mark_unfaithful(result, f"Verification raised: {type(exc).__name__}: {exc}")
+
+    # Persist the trace + verification report even on failure — the artifacts
+    # are the point of the exercise.
+    try:
+        trace_path.write_text(trace.model_dump_json(indent=2), encoding="utf-8")
+        verification_path.write_text(report.model_dump_json(indent=2), encoding="utf-8")
+    except OSError as exc:
+        logger.warning("Failed to write reasoning sidecars: %s", exc)
+
+    if not report.faithful:
+        note = report.overall_notes or f"{report.n_faithful}/{report.n_decisions} decisions verified."
+        return _mark_unfaithful(result, f"Reasoning trace unfaithful: {note}")
+
+    return result
+
+
+def _mark_unfaithful(result: RunResult, message: str) -> RunResult:
+    """Return a copy of ``result`` re-classified as reasoning_unfaithful."""
+    return result.model_copy(update=dict(
+        success=False,
+        error_category=ErrorCategory.REASONING_UNFAITHFUL.value,
+        error_message=message,
+    ))

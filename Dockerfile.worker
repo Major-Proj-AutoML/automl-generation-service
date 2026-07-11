@@ -14,7 +14,8 @@ RUN pip install --no-cache-dir --upgrade pip setuptools && \
     pip install --no-cache-dir \
         sqlalchemy psycopg2-binary pydantic-settings httpx \
         redis rq \
-        pandas numpy scikit-learn scipy pydantic requests openml tabulate fastapi
+        pandas numpy scikit-learn scipy pydantic requests openml tabulate fastapi \
+        category_encoders lightgbm imbalanced-learn xgboost-cpu
 
 ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1
 
