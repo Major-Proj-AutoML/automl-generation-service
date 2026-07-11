@@ -268,10 +268,20 @@ def _verify_b2_reasoning(
 
     trace = extract_reasoning(stdout)
     if trace is None:
-        return _mark_unfaithful(
-            result,
-            "No REASONING: {...} line found in stdout, or the JSON was malformed.",
-        )
+        # Persist the raw REASONING: line (if present) so we can debug why the
+        # trace failed to parse without re-running the LLM.
+        raw_reasoning = None
+        for line in stdout.splitlines():
+            if line.lstrip().startswith("REASONING:"):
+                raw_reasoning = line
+                break
+        try:
+            debug_path = Path(str(code_path).replace(".py", "") + ".reasoning_raw.txt")
+            debug_path.write_text(raw_reasoning or "(no REASONING line found)", encoding="utf-8")
+        except OSError:
+            pass
+        detail = "no REASONING line" if raw_reasoning is None else "malformed JSON (raw saved as .reasoning_raw.txt)"
+        return _mark_unfaithful(result, f"REASONING trace missing or malformed: {detail}")
 
     try:
         report = verify_reasoning(trace, code, meta)
