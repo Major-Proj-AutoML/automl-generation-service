@@ -89,6 +89,10 @@ def run_cell(
         current_prompt = base_prompt
         best_result = None
         final_result = None
+        best_trace: dict | None = None
+        best_report: dict | None = None
+        final_trace: dict | None = None
+        final_report: dict | None = None
         iterations_used = 0
 
         for i in range(max_iter):
@@ -114,18 +118,24 @@ def run_cell(
                 pipeline, task_type=task_type, timeout_seconds=timeout_seconds
             )
 
+            trace_dict: dict | None = None
+            report_dict: dict | None = None
             # B2 must additionally emit a REASONING trace that we can
             # mechanically verify against the code and meta-features.
             # Skip for B0/B1 (they are not prompted to produce a trace).
             if result.success and condition_key == "b2_metafeature":
-                result = _verify_b2_reasoning(result, code, meta)
+                result, trace_dict, report_dict = _verify_b2_reasoning(result, code, meta)
 
             if result.success:
                 best_result = result
                 final_result = result
+                best_trace = trace_dict
+                best_report = report_dict
                 break
 
             final_result = result
+            final_trace = trace_dict
+            final_report = report_dict
             current_prompt = base_prompt + build_error_feedback(
                 error_message=result.error_message or "",
                 error_category=result.error_category,
@@ -135,6 +145,8 @@ def run_cell(
         record = _persist(
             session, dataset_id, condition, llm_backend, seed,
             best_result or final_result, iterations_used, max_iter,
+            reasoning_trace=best_trace or final_trace,
+            verification_report=best_report or final_report,
         )
         return record.id
     finally:
@@ -160,7 +172,9 @@ def _make_infra_failure(dataset_id, condition, llm_backend, seed, iteration,
 
 
 def _persist(session, dataset_id, condition, llm_backend, seed, result,
-             iterations_used, max_iter):
+             iterations_used, max_iter,
+             reasoning_trace: dict | None = None,
+             verification_report: dict | None = None):
     rec = RunResultRecord(
         dataset_id=dataset_id,
         condition=condition.condition_name,
@@ -175,6 +189,8 @@ def _persist(session, dataset_id, condition, llm_backend, seed, result,
         max_iterations=max_iter,
         runtime_seconds=result.runtime_seconds,
         generated_code_path=result.generated_code_path or None,
+        reasoning_trace=reasoning_trace,
+        verification_report=verification_report,
     )
     session.add(rec)
     session.commit()
@@ -247,14 +263,16 @@ def _expand_cells(params: dict) -> list[tuple[int, str, str, int]]:
 
 def _verify_b2_reasoning(
     result: RunResult, code: str, meta: MetaFeatures | None
-) -> RunResult:
+) -> tuple[RunResult, dict | None, dict | None]:
     """For a successful B2 run, extract the LLM's REASONING trace, verify it
     mechanically against the generated code and meta-features, save trace and
     verification report as sidecar files next to the generated code, and flip
     the result to failed if the trace is missing or unfaithful.
 
-    Never raises — any error becomes a REASONING_UNFAITHFUL failure with a
-    descriptive message.
+    Returns ``(result, trace_dict, report_dict)`` — the trace and report
+    dictionaries are threaded back so ``_persist`` can store them alongside
+    the run row. Both may be ``None`` when the trace was missing/malformed.
+    Never raises — any error becomes a REASONING_UNFAITHFUL failure.
     """
     code_path = Path(result.generated_code_path)
     stdout_path = Path(str(code_path) + ".stdout.txt")
@@ -264,12 +282,10 @@ def _verify_b2_reasoning(
     try:
         stdout = stdout_path.read_text(encoding="utf-8") if stdout_path.exists() else ""
     except OSError as exc:
-        return _mark_unfaithful(result, f"Could not read stdout sidecar: {exc}")
+        return _mark_unfaithful(result, f"Could not read stdout sidecar: {exc}"), None, None
 
     trace = extract_reasoning(stdout)
     if trace is None:
-        # Persist the raw REASONING: line (if present) so we can debug why the
-        # trace failed to parse without re-running the LLM.
         raw_reasoning = None
         for line in stdout.splitlines():
             if line.lstrip().startswith("REASONING:"):
@@ -281,15 +297,19 @@ def _verify_b2_reasoning(
         except OSError:
             pass
         detail = "no REASONING line" if raw_reasoning is None else "malformed JSON (raw saved as .reasoning_raw.txt)"
-        return _mark_unfaithful(result, f"REASONING trace missing or malformed: {detail}")
+        return _mark_unfaithful(result, f"REASONING trace missing or malformed: {detail}"), None, None
 
     try:
         report = verify_reasoning(trace, code, meta)
     except Exception as exc:  # noqa: BLE001
-        return _mark_unfaithful(result, f"Verification raised: {type(exc).__name__}: {exc}")
+        return _mark_unfaithful(result, f"Verification raised: {type(exc).__name__}: {exc}"), None, None
 
-    # Persist the trace + verification report even on failure — the artifacts
-    # are the point of the exercise.
+    trace_dict = trace.model_dump()
+    report_dict = report.model_dump()
+
+    # Persist as sidecars too (unchanged behavior — the JSON files remain the
+    # source of truth for external inspection, and let older runs stay
+    # queryable when the DB is wiped).
     try:
         trace_path.write_text(trace.model_dump_json(indent=2), encoding="utf-8")
         verification_path.write_text(report.model_dump_json(indent=2), encoding="utf-8")
@@ -298,9 +318,13 @@ def _verify_b2_reasoning(
 
     if not report.faithful:
         note = report.overall_notes or f"{report.n_faithful}/{report.n_decisions} decisions verified."
-        return _mark_unfaithful(result, f"Reasoning trace unfaithful: {note}")
+        return (
+            _mark_unfaithful(result, f"Reasoning trace unfaithful: {note}"),
+            trace_dict,
+            report_dict,
+        )
 
-    return result
+    return result, trace_dict, report_dict
 
 
 def _mark_unfaithful(result: RunResult, message: str) -> RunResult:

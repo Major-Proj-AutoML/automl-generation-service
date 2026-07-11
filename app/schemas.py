@@ -33,6 +33,8 @@ class RunResponse(BaseModel):
     max_iterations: Optional[int] = None
     runtime_seconds: Optional[float] = None
     generated_code_path: Optional[str] = None
+    reasoning_trace: Optional[dict] = None
+    verification_report: Optional[dict] = None
     created_at: datetime
 
 

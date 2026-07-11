@@ -23,6 +23,11 @@ class RunResultRecord(Base):
     max_iterations: Mapped[int | None] = mapped_column(Integer, nullable=True)
     runtime_seconds: Mapped[float | None] = mapped_column(Float, nullable=True)
     generated_code_path: Mapped[str | None] = mapped_column(String, nullable=True)
+    # B2 structured reasoning + mechanical audit. Both nullable — B0/B1 never
+    # produce a trace, and B2 runs whose trace failed extraction/verification
+    # leave these NULL and are flagged via error_category.
+    reasoning_trace: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    verification_report: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
