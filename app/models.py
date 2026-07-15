@@ -28,6 +28,8 @@ class RunResultRecord(Base):
     # leave these NULL and are flagged via error_category.
     reasoning_trace: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     verification_report: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    prompt_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    completion_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

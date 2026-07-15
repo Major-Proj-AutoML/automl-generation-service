@@ -18,7 +18,7 @@ from src.execution.metrics import extract_reasoning
 from src.execution.runner import execute_pipeline
 from src.execution.verification import verify_reasoning
 from src.experiments.datasets import build_task_description
-from src.experiments.runner import build_error_feedback, call_llm
+from src.experiments.runner import build_error_feedback, call_llm_with_usage
 from src.meta_features.extractor import extract as extract_meta
 
 from app.config import settings
@@ -94,11 +94,22 @@ def run_cell(
         final_trace: dict | None = None
         final_report: dict | None = None
         iterations_used = 0
+        prompt_tokens_total = 0
+        completion_tokens_total = 0
+        tokens_captured = False
 
         for i in range(max_iter):
             iterations_used = i + 1
             try:
-                code = call_llm(current_prompt, backend=llm_backend, seed=seed + i)
+                code, p_toks, c_toks = call_llm_with_usage(
+                    current_prompt, backend=llm_backend, seed=seed + i
+                )
+                if p_toks is not None:
+                    prompt_tokens_total += p_toks
+                    tokens_captured = True
+                if c_toks is not None:
+                    completion_tokens_total += c_toks
+                    tokens_captured = True
             except ConnectionError as exc:
                 final_result = _make_infra_failure(
                     dataset_id, condition, llm_backend, seed, i, iterations_used,
@@ -147,6 +158,8 @@ def run_cell(
             best_result or final_result, iterations_used, max_iter,
             reasoning_trace=best_trace or final_trace,
             verification_report=best_report or final_report,
+            prompt_tokens=(prompt_tokens_total if tokens_captured else None),
+            completion_tokens=(completion_tokens_total if tokens_captured else None),
         )
         return record.id
     finally:
@@ -174,7 +187,9 @@ def _make_infra_failure(dataset_id, condition, llm_backend, seed, iteration,
 def _persist(session, dataset_id, condition, llm_backend, seed, result,
              iterations_used, max_iter,
              reasoning_trace: dict | None = None,
-             verification_report: dict | None = None):
+             verification_report: dict | None = None,
+             prompt_tokens: int | None = None,
+             completion_tokens: int | None = None):
     rec = RunResultRecord(
         dataset_id=dataset_id,
         condition=condition.condition_name,
@@ -191,6 +206,8 @@ def _persist(session, dataset_id, condition, llm_backend, seed, result,
         generated_code_path=result.generated_code_path or None,
         reasoning_trace=reasoning_trace,
         verification_report=verification_report,
+        prompt_tokens=prompt_tokens,
+        completion_tokens=completion_tokens,
     )
     session.add(rec)
     session.commit()
