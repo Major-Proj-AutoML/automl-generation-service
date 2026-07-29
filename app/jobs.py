@@ -98,11 +98,18 @@ def run_cell(
         completion_tokens_total = 0
         tokens_captured = False
 
+        num_predict_cap: int | None = None
+        if llm_backend == "nemotron-3-nano:30b-cloud" and condition_key == "b2_metafeature":
+            num_predict_cap = 8000
+
         for i in range(max_iter):
             iterations_used = i + 1
             try:
                 code, p_toks, c_toks = call_llm_with_usage(
-                    current_prompt, backend=llm_backend, seed=seed + i
+                    current_prompt,
+                    backend=llm_backend,
+                    seed=seed + i,
+                    num_predict=num_predict_cap,
                 )
                 if p_toks is not None:
                     prompt_tokens_total += p_toks
