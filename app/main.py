@@ -5,10 +5,12 @@ from __future__ import annotations
 import logging
 from typing import Optional
 
-from fastapi import Depends, FastAPI, Query
+from fastapi import Depends, FastAPI, HTTPException, Query
+from fastapi.responses import Response
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
+from app import object_store
 from app.config import settings
 from app.data_service_client import DataServiceClient
 from app.db import get_session
@@ -108,6 +110,42 @@ def get_run_endpoint(
     run_id: int, session: Session = Depends(get_session)
 ) -> RunResponse:
     return RunResponse.model_validate(get_run(session, run_id))
+
+
+def _run_key_prefix(run) -> str:
+    return object_store.build_key_prefix(
+        run.dataset_id, run.condition, run.llm_backend, run.seed, run.iteration
+    )
+
+
+@app.get("/runs/{run_id}/script")
+def download_script(run_id: int, session: Session = Depends(get_session)) -> Response:
+    run = get_run(session, run_id)
+    key = f"{_run_key_prefix(run)}.py"
+    data = object_store.get_object(settings.minio_scripts_bucket, key)
+    if data is None:
+        raise HTTPException(status_code=404, detail=f"Script not found: {key}")
+    filename = f"run{run_id}.py"
+    return Response(
+        content=data,
+        media_type="text/x-python",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@app.get("/runs/{run_id}/model")
+def download_model(run_id: int, session: Session = Depends(get_session)) -> Response:
+    run = get_run(session, run_id)
+    key = f"{_run_key_prefix(run)}/model.joblib"
+    data = object_store.get_object(settings.minio_models_bucket, key)
+    if data is None:
+        raise HTTPException(status_code=404, detail=f"Model not found: {key}")
+    filename = f"run{run_id}.joblib"
+    return Response(
+        content=data,
+        media_type="application/octet-stream",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @app.post("/sweeps", response_model=EnqueueResponse, status_code=202)

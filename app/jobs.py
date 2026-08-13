@@ -21,6 +21,7 @@ from src.experiments.datasets import build_task_description
 from src.experiments.runner import build_error_feedback, call_llm_with_usage
 from src.meta_features.extractor import extract as extract_meta
 
+from app import object_store
 from app.config import settings
 from app.data_service_client import DataServiceClient
 from app.db import SessionLocal
@@ -145,6 +146,7 @@ def run_cell(
                 result, trace_dict, report_dict = _verify_b2_reasoning(result, code, meta)
 
             if result.success:
+                _upload_artifacts(result, condition.condition_name, llm_backend, seed, i, dataset_id)
                 best_result = result
                 final_result = result
                 best_trace = trace_dict
@@ -349,6 +351,32 @@ def _verify_b2_reasoning(
         )
 
     return result, trace_dict, report_dict
+
+
+def _upload_artifacts(
+    result: RunResult,
+    condition_name: str,
+    llm_backend: str,
+    seed: int,
+    iteration: int,
+    dataset_id: int,
+) -> None:
+    """Best-effort push of the generated script and any model files to MinIO."""
+    code_path = result.generated_code_path
+    if not code_path:
+        return
+    try:
+        key_prefix = object_store.build_key_prefix(
+            dataset_id, condition_name, llm_backend, seed, iteration
+        )
+        object_store.upload_file(
+            settings.minio_scripts_bucket, f"{key_prefix}.py", Path(code_path)
+        )
+        object_store.upload_dir(
+            settings.minio_models_bucket, key_prefix, Path(code_path + ".models")
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Artifact upload failed (non-fatal): %s", exc)
 
 
 def _mark_unfaithful(result: RunResult, message: str) -> RunResult:

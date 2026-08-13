@@ -12,6 +12,13 @@ class Settings(BaseSettings):
     default_timeout_seconds: int = 300
     http_timeout_seconds: float = 30.0
 
+    minio_endpoint: str = ""
+    minio_access_key: str = "automl"
+    minio_secret_key: str = "automl_dev_pw"
+    minio_secure: bool = False
+    minio_scripts_bucket: str = "scripts"
+    minio_models_bucket: str = "models"
+
     model_config = SettingsConfigDict(env_file=".env", case_sensitive=False)
 
 
