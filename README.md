@@ -17,6 +17,8 @@ Async LLM generation microservice. Web on port **8003**, worker as a separate pr
 | POST | `/runs` | Enqueue a single-cell run |
 | GET | `/runs` | List runs (filters: `dataset_id`, `condition`, `llm_backend`, `limit`) |
 | GET | `/runs/{id}` | Fetch one run's result |
+| GET | `/runs/{id}/script` | Download the generated pipeline `.py` (from MinIO) |
+| GET | `/runs/{id}/model` | Download the trained `model.joblib` (from MinIO) |
 | POST | `/sweeps` | Enqueue a batch sweep (cartesian product) |
 | GET | `/sweeps` | List recent sweeps |
 | GET | `/sweeps/{id}` | Poll sweep progress |
@@ -41,8 +43,9 @@ Both use the same `.env`, both need Postgres + Redis + data-service reachable.
 
 - `automl-reusables`
 - `automl-data-service` (HTTP)
-- `automl-infra` (Postgres + Redis)
+- `automl-infra` (Postgres + Redis + MinIO)
 - Ollama running at `OLLAMA_URL` for actual generation
+- MinIO at `MINIO_ENDPOINT` for script/model artifacts (best-effort — uploads are no-ops if unconfigured)
 
 ## Tests
 
