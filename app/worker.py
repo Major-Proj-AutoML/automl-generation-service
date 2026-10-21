@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: MIT OR Apache-2.0
+# Copyright 2026 The VESIT AutoML Project contributors
+
 """RQ worker entry point.
 
 Run as: `python -m app.worker` inside the worker container. Consumes the same

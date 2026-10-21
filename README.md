@@ -54,3 +54,20 @@ Uses SQLite in-memory + stubbed queue/data-client/LLM. No infra needed:
 ```bash
 pytest -v
 ```
+
+## License
+
+Dual-licensed under either of
+
+- Apache License 2.0 ([LICENSE-APACHE](LICENSE-APACHE))
+- MIT license ([LICENSE-MIT](LICENSE-MIT))
+
+at your option. Unless you explicitly state otherwise, any contribution you
+intentionally submit for inclusion in this work shall be dual-licensed as
+above, without any additional terms or conditions.
+
+## Citing
+
+Part of the VESIT AutoML project. For citation metadata and (once released) a
+DOI, see the [`automl-infra`](https://github.com/Major-Proj-AutoML/automl-infra)
+repository's `CITATION.cff`.

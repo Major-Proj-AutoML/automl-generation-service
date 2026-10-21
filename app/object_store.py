@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: MIT OR Apache-2.0
+# Copyright 2026 The VESIT AutoML Project contributors
+
 """Thin MinIO wrapper for shipping generated scripts and model artifacts.
 
 Best-effort. If MinIO is unreachable or unconfigured, uploads become no-ops so

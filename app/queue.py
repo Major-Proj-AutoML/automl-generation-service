@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: MIT OR Apache-2.0
+# Copyright 2026 The VESIT AutoML Project contributors
+
 """Redis + RQ queue setup, wrapped so tests can substitute a fake."""
 
 from __future__ import annotations

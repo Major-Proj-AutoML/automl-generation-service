@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: MIT OR Apache-2.0
+# Copyright 2026 The VESIT AutoML Project contributors
+
 """Job functions executed by the RQ worker.
 
 Must be importable by full module path so RQ can pickle references. Each job
