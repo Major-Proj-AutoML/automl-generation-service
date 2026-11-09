@@ -44,7 +44,9 @@ Both use the same `.env`, both need Postgres + Redis + data-service reachable.
 - `automl-reusables`
 - `automl-data-service` (HTTP)
 - `automl-infra` (Postgres + Redis + MinIO)
-- Ollama running at `OLLAMA_URL` for actual generation
+- An LLM provider for actual generation: OpenRouter by default
+  (`LLM_PROVIDER=openrouter` + `OPENROUTER_API_KEY`), or a local Ollama
+  (`LLM_PROVIDER=ollama` + `OLLAMA_URL`)
 - MinIO at `MINIO_ENDPOINT` for script/model artifacts (best-effort — uploads are no-ops if unconfigured)
 
 ## Tests

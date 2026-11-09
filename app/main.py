@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 from typing import Optional
 
 from fastapi import Depends, FastAPI, HTTPException, Query
@@ -121,11 +122,51 @@ def _run_key_prefix(run) -> str:
     )
 
 
+def _read_local_script(run) -> "bytes | None":
+    """Fallback when MinIO is disabled/empty: read the generated .py directly
+    off the shared logs volume (automl-reusables/logs/runs/) that this service
+    also mounts, using the path recorded on the run row."""
+    path = getattr(run, "generated_code_path", None)
+    if not path:
+        return None
+    p = Path(path)
+    try:
+        return p.read_bytes() if p.is_file() else None
+    except OSError:
+        return None
+
+
+def _read_local_model(run) -> "bytes | None":
+    """Fallback for the trained model. The pipeline writes model files into
+    ``<generated_code_path>.models/``; prefer model.joblib, else the first
+    .joblib present. Returns None if the pipeline saved no model."""
+    path = getattr(run, "generated_code_path", None)
+    if not path:
+        return None
+    models_dir = Path(path + ".models")
+    if not models_dir.is_dir():
+        return None
+    preferred = models_dir / "model.joblib"
+    if preferred.is_file():
+        target = preferred
+    else:
+        candidates = sorted(models_dir.glob("*.joblib"))
+        target = candidates[0] if candidates else None
+    if target is None:
+        return None
+    try:
+        return target.read_bytes()
+    except OSError:
+        return None
+
+
 @app.get("/runs/{run_id}/script")
 def download_script(run_id: int, session: Session = Depends(get_session)) -> Response:
     run = get_run(session, run_id)
     key = f"{_run_key_prefix(run)}.py"
     data = object_store.get_object(settings.minio_scripts_bucket, key)
+    if data is None:
+        data = _read_local_script(run)
     if data is None:
         raise HTTPException(status_code=404, detail=f"Script not found: {key}")
     filename = f"run{run_id}.py"
@@ -141,6 +182,8 @@ def download_model(run_id: int, session: Session = Depends(get_session)) -> Resp
     run = get_run(session, run_id)
     key = f"{_run_key_prefix(run)}/model.joblib"
     data = object_store.get_object(settings.minio_models_bucket, key)
+    if data is None:
+        data = _read_local_model(run)
     if data is None:
         raise HTTPException(status_code=404, detail=f"Model not found: {key}")
     filename = f"run{run_id}.joblib"
